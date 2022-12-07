@@ -137,6 +137,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "der"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1a467a65c5e759bce6e65eaf91cc29f466cdc57cb65777bd646872a8a1fd4de"
+
+[[package]]
 name = "digest"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -160,7 +166,7 @@ dependencies = [
 name = "ecdsa"
 version = "0.13.3"
 dependencies = [
- "der 0.5.1",
+ "der 0.6.1",
  "elliptic-curve 0.11.5",
  "hex-literal",
  "rfc6979",

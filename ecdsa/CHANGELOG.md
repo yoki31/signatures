@@ -4,6 +4,240 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.16.9 (2023-11-16)
+### Changed
+- Loosen `signature` bound to `2.0, <2.3` ([#756])
+
+[#756]: https://github.com/RustCrypto/signatures/pull/756
+
+## 0.16.8 (2023-07-20)
+### Added
+- `hazmat::{sign_prehashed, verify_prehashed}` ([#731])
+
+### Changed
+- Refactor `Signature` constructors and improve docs ([#730])
+
+[#730]: https://github.com/RustCrypto/signatures/pull/730
+[#731]: https://github.com/RustCrypto/signatures/pull/731
+
+## 0.16.7 (2023-05-11)
+### Added
+- RFC5480 citation for `der::Signature` ([#710])
+- support for the `SignatureBitStringEncoding` trait ([#716])
+
+### Changed
+- bump `elliptic-curve` from 0.13.3 to 0.13.4 ([#709])
+- `der::Signature` citation to RFC5912 ([#711])
+- make `fmt` impls more consistent ([#713])
+
+### Fixed
+- `serde` doc fixup ([#712])
+
+[#709]: https://github.com/RustCrypto/signatures/pull/709
+[#710]: https://github.com/RustCrypto/signatures/pull/710
+[#711]: https://github.com/RustCrypto/signatures/pull/711
+[#712]: https://github.com/RustCrypto/signatures/pull/712
+[#713]: https://github.com/RustCrypto/signatures/pull/713
+[#716]: https://github.com/RustCrypto/signatures/pull/716
+
+## 0.16.6 (2023-04-09)
+### Fixed
+- Test macro handling of serialized field size ([#707])
+
+[#707]: https://github.com/RustCrypto/signatures/pull/707
+
+## 0.16.5 (2023-04-08)
+### Fixed
+- Use `C::FieldBytesSize` instead of `C::Uint::BYTES` ([#705])
+
+[#705]: https://github.com/RustCrypto/signatures/pull/705
+
+## 0.16.4 (2023-04-05)
+### Fixed
+- `RecoveryId` computation in `SignPrimitive` ([#702])
+
+[#702]: https://github.com/RustCrypto/signatures/pull/702
+
+## 0.16.3 (2023-04-04)
+### Added
+- RFC5758 OID support ([#686])
+- `SignatureAlgorithmIdentifier` impls for `SigningKey`/`VerifyingKey` ([#688])
+- `SignatureWithOid` ([#689], [#690])
+- `AssociatedAlgorithmIdentifier` impls for `SigningKey`/`VerifyingKey` ([#698])
+
+### Changed
+- Loosen `signature` bound to `2.0, <2.2` ([#697])
+
+[#686]: https://github.com/RustCrypto/signatures/pull/686
+[#688]: https://github.com/RustCrypto/signatures/pull/688
+[#689]: https://github.com/RustCrypto/signatures/pull/689
+[#690]: https://github.com/RustCrypto/signatures/pull/690
+[#697]: https://github.com/RustCrypto/signatures/pull/697
+[#698]: https://github.com/RustCrypto/signatures/pull/698
+
+## 0.16.2 (2023-03-28)
+### Added
+- Handle the reduced R.x case in public key recovery ([#680])
+- `Signature::{from_bytes, from_slice}` methods ([#684])
+
+[#680]: https://github.com/RustCrypto/signatures/pull/680
+[#684]: https://github.com/RustCrypto/signatures/pull/684
+
+## 0.16.1 (2023-03-09)
+### Added
+- `VerifyingKey::to_sec1_bytes` + more conversions ([#675])
+
+[#675]: https://github.com/RustCrypto/signatures/pull/675
+
+## 0.16.0 (2023-03-01)
+### Added
+- `Decode` and `Encode` impls for `der::Signature` ([#666])
+
+### Changed
+- Use `Scalar::invert_vartime` for faster verification ([#651])
+- Bump `serdect` dependency to 0.2 ([#657])
+- Bump `elliptic-curve` dependency to v0.13; MSRV 1.65 ([#660], [#663])
+- Bump `rfc6979` dependency to v0.4 ([#662])
+
+[#651]: https://github.com/RustCrypto/signatures/pull/651
+[#657]: https://github.com/RustCrypto/signatures/pull/657
+[#660]: https://github.com/RustCrypto/signatures/pull/660
+[#662]: https://github.com/RustCrypto/signatures/pull/662
+[#666]: https://github.com/RustCrypto/signatures/pull/666
+
+## 0.15.1 (2023-01-23)
+### Added
+- `SigningKey::*_recoverable` methods ([#635])
+
+[#635]: https://github.com/RustCrypto/signatures/pull/635
+
+## 0.15.0 (2023-01-15)
+### Added
+- `DigestPrimitive::Digest` now has bounds that work with RFC6979 ([#568])
+- `*Signer`/`*Verifier` impls for `der::Signature` ([#569])
+- `VerifyingKey` recovery support ([#576])
+- Trial recovery support ([#580])
+
+### Changed
+- Signature now internally structured with `r` and `s` components ([#565])
+- `SigningKey::verifying_key` now returns a reference ([#567])
+- Refactor `prehash_to_field_bytes` to `bits2field` free function ([#574])
+- Rename `sign` feature to `signing` ([#610])
+- Rename `verify` feature to `verifying` features ([#610])
+- Bump `signature` crate dependency to v2.0 ([#614])
+
+[#565]: https://github.com/RustCrypto/signatures/pull/565
+[#567]: https://github.com/RustCrypto/signatures/pull/567
+[#574]: https://github.com/RustCrypto/signatures/pull/574
+[#580]: https://github.com/RustCrypto/signatures/pull/580
+[#568]: https://github.com/RustCrypto/signatures/pull/568
+[#569]: https://github.com/RustCrypto/signatures/pull/569
+[#576]: https://github.com/RustCrypto/signatures/pull/576
+[#580]: https://github.com/RustCrypto/signatures/pull/580
+[#610]: https://github.com/RustCrypto/signatures/pull/610
+[#614]: https://github.com/RustCrypto/signatures/pull/614
+
+## 0.14.8 (2022-09-27)
+### Added
+- Impl `From<SigningKey>` for `SecretKey` ([#548])
+
+### Fixed
+- Prehash must receive zero-pads on left ([#547])
+
+[#547]: https://github.com/RustCrypto/signatures/pull/547
+[#548]: https://github.com/RustCrypto/signatures/pull/548
+
+## 0.14.7 (2022-09-15)
+### Changed
+- Relax `Keypair` bounds ([#539])
+
+[#539]: https://github.com/RustCrypto/signatures/pull/539
+
+## 0.14.6 (2022-09-12)
+### Added
+- Impl `signature::hazmat::{PrehashSigner, PrehashVerifier}` ([#534])
+- Impl `signature::Keypair` for `SigningKey` ([#535])
+
+[#534]: https://github.com/RustCrypto/signatures/pull/534
+[#535]: https://github.com/RustCrypto/signatures/pull/535
+
+## 0.14.5 (2022-09-06)
+### Added
+- Impl `EncodePrivateKey` for `SigningKey` ([#523])
+- `SigningKey::as_nonzero_scalar` ([#528])
+- `VerifyingKey::as_affine` ([#528])
+- `RecoveryId::from_byte` ([#531])
+
+### Changed
+- Make `RecoveryId` methods `const fn` ([#529])
+
+[#523]: https://github.com/RustCrypto/signatures/pull/523
+[#528]: https://github.com/RustCrypto/signatures/pull/528
+[#529]: https://github.com/RustCrypto/signatures/pull/529
+[#531]: https://github.com/RustCrypto/signatures/pull/531
+
+## 0.14.4 (2022-08-15)
+### Added
+- Impl `EncodePublicKey` for `VerifyingKey` ([#505])
+- ZeroizeOnDrop marker for SigningKey ([#509])
+
+### Changed
+- Restrict `signature` version to v1.5-v1.6 ([#508], [#512])
+
+[#505]: https://github.com/RustCrypto/signatures/pull/505
+[#508]: https://github.com/RustCrypto/signatures/pull/508
+[#509]: https://github.com/RustCrypto/signatures/pull/509
+[#512]: https://github.com/RustCrypto/signatures/pull/512
+
+## 0.14.3 (2022-06-26) [YANKED]
+### Changed
+- Simplified digest trait bounds ([#499])
+- Bump `rfc6979` dependency to v0.3 ([#500])
+
+[#499]: https://github.com/RustCrypto/signatures/pull/499
+[#500]: https://github.com/RustCrypto/signatures/pull/500
+
+## 0.14.2 (2022-06-17) [YANKED]
+### Added
+- Security warning in README.md ([#486])
+
+### Changed
+- Use `serdect` for `Signature` types ([#497])
+
+[#486]: https://github.com/RustCrypto/signatures/pull/486
+[#497]: https://github.com/RustCrypto/signatures/pull/497
+
+## 0.14.1 (2022-05-09) [YANKED]
+### Added
+- `SignPrimitive::try_sign_digest_rfc6979` ([#475])
+- `VerifyPrimitive::verify_digest` ([#475])
+
+[#475]: https://github.com/RustCrypto/signatures/pull/475
+
+## 0.14.0 (2022-05-09) [YANKED]
+### Added
+- `VerifyingKey::from_affine` ([#452])
+
+### Changed
+- Bump `digest` dependency to v0.10 ([#433])
+- `SignPrimitive` and `VerifyPrimitive` to accept `FieldBytes<C>` rather than `Scalar<C>` ([#460])
+- Replace `hazmat::rfc6979_generate_k` with `SignPrimitive::try_sign_prehashed_rfc6979` ([#460])
+- Bump `der` dependency to v0.6 ([#468])
+- Bump `elliptic-curve` dependency to v0.12 ([#468])
+- Bump `rfc6979` dependency to v0.2 ([#470])
+
+[#433]: https://github.com/RustCrypto/signatures/pull/433
+[#452]: https://github.com/RustCrypto/signatures/pull/452
+[#460]: https://github.com/RustCrypto/signatures/pull/460
+[#468]: https://github.com/RustCrypto/signatures/pull/468
+[#470]: https://github.com/RustCrypto/signatures/pull/470
+
+## 0.13.4 (2022-01-06)
+### Added
+- `Signature::to_vec` ([#428])
+
+[#428]: https://github.com/RustCrypto/signatures/pull/428
+
 ## 0.13.3 (2021-12-04)
 ### Changed
 - Use revised `LinearCombination` trait ([#419])

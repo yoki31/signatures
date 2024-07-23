@@ -1,20 +1,29 @@
-//! Support for ECDSA signatures encoded as ASN.1 DER.
+//! Support for ASN.1 DER-encoded ECDSA signatures as specified in
+//! [RFC5912 Section 6].
+//!
+//! [RFC5912 Section 6]: https://www.rfc-editor.org/rfc/rfc5912#section-6
 
-use crate::{Error, Result};
+use crate::{EcdsaCurve, Error, Result};
 use core::{
-    fmt,
+    fmt::{self, Debug},
     ops::{Add, Range},
 };
-use der::{asn1::UIntBytes, Decodable, Encodable};
+use der::{asn1::UintRef, Decode, Encode, FixedTag, Length, Reader, Tag, Writer};
 use elliptic_curve::{
-    bigint::Encoding as _,
+    array::{typenum::Unsigned, Array, ArraySize},
     consts::U9,
-    generic_array::{ArrayLength, GenericArray},
-    FieldSize, PrimeCurve,
+    FieldBytesSize,
 };
 
 #[cfg(feature = "alloc")]
-use alloc::boxed::Box;
+use {
+    alloc::{boxed::Box, vec::Vec},
+    signature::SignatureEncoding,
+    spki::{der::asn1::BitString, SignatureBitStringEncoding},
+};
+
+#[cfg(feature = "serde")]
+use serdect::serde::{de, ser, Deserialize, Serialize};
 
 /// Maximum overhead of an ASN.1 DER-encoded ECDSA signature for a given curve:
 /// 9-bytes.
@@ -33,19 +42,26 @@ use alloc::boxed::Box;
 pub type MaxOverhead = U9;
 
 /// Maximum size of an ASN.1 DER encoded signature for the given elliptic curve.
-pub type MaxSize<C> = <<FieldSize<C> as Add>::Output as Add<MaxOverhead>>::Output;
+pub type MaxSize<C> = <<FieldBytesSize<C> as Add>::Output as Add<MaxOverhead>>::Output;
 
 /// Byte array containing a serialized ASN.1 signature
-type SignatureBytes<C> = GenericArray<u8, MaxSize<C>>;
+type SignatureBytes<C> = Array<u8, MaxSize<C>>;
 
-/// ASN.1 DER-encoded signature.
+/// ASN.1 DER-encoded signature as specified in [RFC5912 Section 6]:
 ///
-/// Generic over the scalar size of the elliptic curve.
+/// ```text
+/// ECDSA-Sig-Value ::= SEQUENCE {
+///   r  INTEGER,
+///   s  INTEGER
+/// }
+/// ```
+///
+/// [RFC5912 Section 6]: https://www.rfc-editor.org/rfc/rfc5912#section-6
 pub struct Signature<C>
 where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
 {
     /// ASN.1 DER-encoded signature data
     bytes: SignatureBytes<C>,
@@ -57,114 +73,20 @@ where
     s_range: Range<usize>,
 }
 
-impl<C> signature::Signature for Signature<C>
-where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
-{
-    /// Parse an ASN.1 DER-encoded ECDSA signature from a byte slice
-    fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        bytes.try_into()
-    }
-}
-
 #[allow(clippy::len_without_is_empty)]
 impl<C> Signature<C>
 where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
 {
-    /// Get the length of the signature in bytes
-    pub fn len(&self) -> usize {
-        self.s_range.end
-    }
+    /// Parse signature from DER-encoded bytes.
+    pub fn from_bytes(input: &[u8]) -> Result<Self> {
+        let (r, s) = decode_der(input).map_err(|_| Error::new())?;
 
-    /// Borrow this signature as a byte slice
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes.as_slice()[..self.len()]
-    }
-
-    /// Serialize this signature as a boxed byte slice
-    #[cfg(feature = "alloc")]
-    pub fn to_bytes(&self) -> Box<[u8]> {
-        self.as_bytes().to_vec().into_boxed_slice()
-    }
-
-    /// Create an ASN.1 DER encoded signature from big endian `r` and `s` scalars
-    pub(crate) fn from_scalar_bytes(r: &[u8], s: &[u8]) -> der::Result<Self> {
-        let r = UIntBytes::new(r)?;
-        let s = UIntBytes::new(s)?;
-
-        let mut bytes = SignatureBytes::<C>::default();
-        let mut encoder = der::Encoder::new(&mut bytes);
-
-        encoder.sequence((r.encoded_len()? + s.encoded_len()?)?, |seq| {
-            seq.encode(&r)?;
-            seq.encode(&s)
-        })?;
-
-        encoder
-            .finish()?
-            .try_into()
-            .map_err(|_| der::Tag::Sequence.value_error())
-    }
-
-    /// Get the `r` component of the signature (leading zeros removed)
-    pub(crate) fn r(&self) -> &[u8] {
-        &self.bytes[self.r_range.clone()]
-    }
-
-    /// Get the `s` component of the signature (leading zeros removed)
-    pub(crate) fn s(&self) -> &[u8] {
-        &self.bytes[self.s_range.clone()]
-    }
-}
-
-impl<C> AsRef<[u8]> for Signature<C>
-where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
-{
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl<C> fmt::Debug for Signature<C>
-where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("asn1::Signature")
-            .field("r", &self.r())
-            .field("s", &self.s())
-            .finish()
-    }
-}
-
-impl<C> TryFrom<&[u8]> for Signature<C>
-where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
-{
-    type Error = Error;
-
-    fn try_from(input: &[u8]) -> Result<Self> {
-        let (r, s) = der::Decoder::new(input)
-            .and_then(|mut decoder| {
-                decoder.sequence(|decoder| {
-                    Ok((UIntBytes::decode(decoder)?, UIntBytes::decode(decoder)?))
-                })
-            })
-            .map_err(|_| Error::new())?;
-
-        if r.as_bytes().len() > C::UInt::BYTE_SIZE || s.as_bytes().len() > C::UInt::BYTE_SIZE {
+        if r.as_bytes().len() > C::FieldBytesSize::USIZE
+            || s.as_bytes().len() > C::FieldBytesSize::USIZE
+        {
             return Err(Error::new());
         }
 
@@ -184,24 +106,269 @@ where
             s_range,
         })
     }
+
+    /// Create an ASN.1 DER encoded signature from big endian `r` and `s` scalar
+    /// components.
+    pub(crate) fn from_components(r: &[u8], s: &[u8]) -> der::Result<Self> {
+        let r = UintRef::new(r)?;
+        let s = UintRef::new(s)?;
+
+        let mut bytes = SignatureBytes::<C>::default();
+        let mut writer = der::SliceWriter::new(&mut bytes);
+
+        writer.sequence((r.encoded_len()? + s.encoded_len()?)?, |seq| {
+            seq.encode(&r)?;
+            seq.encode(&s)
+        })?;
+
+        writer
+            .finish()?
+            .try_into()
+            .map_err(|_| Tag::Sequence.value_error())
+    }
+
+    /// Borrow this signature as a byte slice
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes.as_slice()[..self.len()]
+    }
+
+    /// Serialize this signature as a boxed byte slice
+    #[cfg(feature = "alloc")]
+    pub fn to_bytes(&self) -> Box<[u8]> {
+        self.as_bytes().to_vec().into_boxed_slice()
+    }
+
+    /// Get the length of the signature in bytes
+    pub fn len(&self) -> usize {
+        self.s_range.end
+    }
+
+    /// Get the `r` component of the signature (leading zeros removed)
+    pub(crate) fn r(&self) -> &[u8] {
+        &self.bytes[self.r_range.clone()]
+    }
+
+    /// Get the `s` component of the signature (leading zeros removed)
+    pub(crate) fn s(&self) -> &[u8] {
+        &self.bytes[self.s_range.clone()]
+    }
 }
 
-impl<C> TryFrom<Signature<C>> for super::Signature<C>
+impl<C> AsRef<[u8]> for Signature<C>
 where
-    C: PrimeCurve,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<C> Clone for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn clone(&self) -> Self {
+        Self {
+            bytes: self.bytes.clone(),
+            r_range: self.r_range.clone(),
+            s_range: self.s_range.clone(),
+        }
+    }
+}
+
+impl<C> Debug for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ecdsa::der::Signature<{:?}>(", C::default())?;
+
+        for &byte in self.as_ref() {
+            write!(f, "{:02X}", byte)?;
+        }
+
+        write!(f, ")")
+    }
+}
+
+impl<'a, C> Decode<'a> for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    type Error = der::Error;
+
+    fn decode<R: Reader<'a>>(reader: &mut R) -> der::Result<Self> {
+        let header = reader.peek_header()?;
+        header.tag.assert_eq(Tag::Sequence)?;
+
+        let mut buf = SignatureBytes::<C>::default();
+        let len = (header.encoded_len()? + header.length)?;
+        let slice = buf
+            .get_mut(..usize::try_from(len)?)
+            .ok_or_else(|| reader.error(Tag::Sequence.length_error().kind()))?;
+
+        reader.read_into(slice)?;
+        Self::from_bytes(slice).map_err(|_| Tag::Integer.value_error())
+    }
+}
+
+impl<C> Encode for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn encoded_len(&self) -> der::Result<Length> {
+        Length::try_from(self.len())
+    }
+
+    fn encode(&self, writer: &mut impl Writer) -> der::Result<()> {
+        writer.write(self.as_bytes())
+    }
+}
+
+impl<C> FixedTag for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    const TAG: Tag = Tag::Sequence;
+}
+
+impl<C> From<crate::Signature<C>> for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn from(sig: crate::Signature<C>) -> Signature<C> {
+        sig.to_der()
+    }
+}
+
+impl<C> TryFrom<&[u8]> for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    type Error = Error;
+
+    fn try_from(input: &[u8]) -> Result<Self> {
+        Self::from_bytes(input)
+    }
+}
+
+impl<C> TryFrom<Signature<C>> for crate::Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
 {
     type Error = Error;
 
     fn try_from(sig: Signature<C>) -> Result<super::Signature<C>> {
         let mut bytes = super::SignatureBytes::<C>::default();
-        let r_begin = C::UInt::BYTE_SIZE.saturating_sub(sig.r().len());
+        let r_begin = C::FieldBytesSize::USIZE.saturating_sub(sig.r().len());
         let s_begin = bytes.len().saturating_sub(sig.s().len());
-        bytes[r_begin..C::UInt::BYTE_SIZE].copy_from_slice(sig.r());
+        bytes[r_begin..C::FieldBytesSize::USIZE].copy_from_slice(sig.r());
         bytes[s_begin..].copy_from_slice(sig.s());
         Self::try_from(bytes.as_slice())
     }
+}
+
+#[cfg(feature = "alloc")]
+impl<C> From<Signature<C>> for Box<[u8]>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn from(signature: Signature<C>) -> Box<[u8]> {
+        signature.to_vec().into_boxed_slice()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<C> SignatureEncoding for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    type Repr = Box<[u8]>;
+
+    fn to_vec(&self) -> Vec<u8> {
+        self.as_bytes().into()
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<C> SignatureBitStringEncoding for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn to_bitstring(&self) -> der::Result<BitString> {
+        BitString::new(0, self.to_vec())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<C> Serialize for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
+    where
+        S: ser::Serializer,
+    {
+        serdect::slice::serialize_hex_upper_or_bin(&self.as_bytes(), serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, C> Deserialize<'de> for Signature<C>
+where
+    C: EcdsaCurve,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
+{
+    fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        let mut buf = SignatureBytes::<C>::default();
+        let slice = serdect::slice::deserialize_hex_or_bin(&mut buf, deserializer)?;
+        Self::try_from(slice).map_err(de::Error::custom)
+    }
+}
+
+/// Decode the `r` and `s` components of a DER-encoded ECDSA signature.
+fn decode_der(der_bytes: &[u8]) -> der::Result<(UintRef<'_>, UintRef<'_>)> {
+    let mut reader = der::SliceReader::new(der_bytes)?;
+    let header = der::Header::decode(&mut reader)?;
+    header.tag.assert_eq(Tag::Sequence)?;
+
+    let ret = reader.read_nested::<_, _, der::Error>(header.length, |reader| {
+        let r = UintRef::decode(reader)?;
+        let s = UintRef::decode(reader)?;
+        Ok((r, s))
+    })?;
+
+    reader.finish(ret)
 }
 
 /// Locate the range within a slice at which a particular subslice is located
@@ -218,9 +385,9 @@ fn find_scalar_range(outer: &[u8], inner: &[u8]) -> Result<Range<usize>> {
 #[cfg(all(feature = "digest", feature = "hazmat"))]
 impl<C> signature::PrehashSignature for Signature<C>
 where
-    C: PrimeCurve + crate::hazmat::DigestPrimitive,
-    MaxSize<C>: ArrayLength<u8>,
-    <FieldSize<C> as Add>::Output: Add<MaxOverhead> + ArrayLength<u8>,
+    C: EcdsaCurve + crate::hazmat::DigestPrimitive,
+    MaxSize<C>: ArraySize,
+    <FieldBytesSize<C> as Add>::Output: Add<MaxOverhead> + ArraySize,
 {
     type Digest = C::Digest;
 }
@@ -228,7 +395,6 @@ where
 #[cfg(all(test, feature = "arithmetic"))]
 mod tests {
     use elliptic_curve::dev::MockCurve;
-    use signature::Signature as _;
 
     type Signature = crate::Signature<MockCurve>;
 
@@ -242,7 +408,7 @@ mod tests {
 
     #[test]
     fn test_fixed_to_asn1_signature_roundtrip() {
-        let signature1 = Signature::from_bytes(&EXAMPLE_SIGNATURE).unwrap();
+        let signature1 = Signature::try_from(EXAMPLE_SIGNATURE.as_ref()).unwrap();
 
         // Convert to ASN.1 DER and back
         let asn1_signature = signature1.to_der();

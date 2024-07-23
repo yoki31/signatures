@@ -2,10 +2,10 @@
 
 [![crate][crate-image]][crate-link]
 [![Docs][docs-image]][docs-link]
+[![Build Status][build-image]][build-link]
 ![Apache2/MIT licensed][license-image]
 ![MSRV][rustc-image]
 [![Project Chat][chat-image]][chat-link]
-[![Build Status][build-image]][build-link]
 
 Pure Rust implementation of RFC6979: Deterministic Usage of the
 Digital Signature Algorithm (DSA) and Elliptic Curve Digital Signature Algorithm (ECDSA).
@@ -17,7 +17,7 @@ Algorithm described in RFC 6979 § 3.2:
 
 ## Minimum Supported Rust Version
 
-This crate requires **Rust 1.56** at a minimum.
+This crate requires **Rust 1.72** at a minimum.
 
 We may change the MSRV in the future, but it will be accompanied by a minor
 version bump.
@@ -39,16 +39,16 @@ dual licensed as above, without any additional terms or conditions.
 
 [//]: # (badges)
 
-[crate-image]: https://img.shields.io/crates/v/rfc6979.svg
+[crate-image]: https://buildstats.info/crate/rfc6979
 [crate-link]: https://crates.io/crates/rfc6979
 [docs-image]: https://docs.rs/rfc6979/badge.svg
 [docs-link]: https://docs.rs/rfc6979/
-[license-image]: https://img.shields.io/badge/license-Apache2.0/MIT-blue.svg
-[rustc-image]: https://img.shields.io/badge/rustc-1.56+-blue.svg
-[chat-image]: https://img.shields.io/badge/zulip-join_chat-blue.svg
-[chat-link]: https://rustcrypto.zulipchat.com/#narrow/stream/260048-signatures
 [build-image]: https://github.com/RustCrypto/signatures/actions/workflows/rfc6979.yml/badge.svg
 [build-link]: https://github.com/RustCrypto/signatures/actions/workflows/rfc6979.yml
+[license-image]: https://img.shields.io/badge/license-Apache2.0/MIT-blue.svg
+[rustc-image]: https://img.shields.io/badge/rustc-1.72+-blue.svg
+[chat-image]: https://img.shields.io/badge/zulip-join_chat-blue.svg
+[chat-link]: https://rustcrypto.zulipchat.com/#narrow/stream/260048-signatures
 
 [//]: # (links)
 

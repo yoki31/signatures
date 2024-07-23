@@ -24,37 +24,32 @@ jobs:
           - thumbv7em-none-eabi
           - wasm32-unknown-unknown
         toolchain:
-          - 1.56.0 # MSRV
+          - 1.72.0 # MSRV
           - stable
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
-          target: ${{ matrix.target }}
+          targets: ${{ matrix.target }}
           toolchain: ${{ matrix.toolchain }}
-          override: true
       - run: cargo build --target ${{ matrix.target }} --release --no-default-features
       - run: cargo build --target ${{ matrix.target }} --release --no-default-features --features alloc
+      - run: cargo build --target ${{ matrix.target }} --release --no-default-features --features pem
       - run: cargo build --target ${{ matrix.target }} --release --no-default-features --features pkcs8
-      - run: cargo build --target ${{ matrix.target }} --release --no-default-features --features alloc,pkcs8
+      - run: cargo build --target ${{ matrix.target }} --release --no-default-features --features alloc,pem,pkcs8
 
   test:
     strategy:
       matrix:
-        platform:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
         toolchain:
-          - 1.56.0 # MSRV
+          - 1.72.0 # MSRV
           - stable
-    runs-on: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-          override: true
       - run: cargo test --release --no-default-features
       - run: cargo test --release
       - run: cargo test --release --all-features

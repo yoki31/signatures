@@ -3,6 +3,13 @@
 // TODO(tarcieri): implement full set of tests from ECDSA2VS
 // <https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Algorithm-Validation-Program/documents/dss2/ecdsa2vs.pdf>
 
+use crate::EcdsaCurve;
+use elliptic_curve::dev::MockCurve;
+
+impl EcdsaCurve for MockCurve {
+    const NORMALIZE_S: bool = false;
+}
+
 /// ECDSA test vector
 pub struct TestVector {
     /// Private scalar
@@ -29,20 +36,21 @@ pub struct TestVector {
 
 /// Define ECDSA signing test.
 #[macro_export]
-#[cfg_attr(docsrs, doc(cfg(feature = "dev")))]
 macro_rules! new_signing_test {
     ($curve:path, $vectors:expr) => {
         use $crate::{
             elliptic_curve::{
-                bigint::Encoding, generic_array::GenericArray, group::ff::PrimeField, Curve,
-                ProjectiveArithmetic, Scalar,
+                array::{typenum::Unsigned, Array},
+                bigint::Encoding,
+                group::ff::PrimeField,
+                Curve, CurveArithmetic, FieldBytes, NonZeroScalar, Scalar,
             },
-            hazmat::SignPrimitive,
+            hazmat::sign_prehashed,
         };
 
-        fn decode_scalar(bytes: &[u8]) -> Option<Scalar<$curve>> {
-            if bytes.len() == <$curve as Curve>::UInt::BYTE_SIZE {
-                Scalar::<$curve>::from_repr(GenericArray::clone_from_slice(bytes)).into()
+        fn decode_scalar(bytes: &[u8]) -> Option<NonZeroScalar<$curve>> {
+            if bytes.len() == <$curve as Curve>::FieldBytesSize::USIZE {
+                NonZeroScalar::<$curve>::from_repr(bytes.try_into().unwrap()).into()
             } else {
                 None
             }
@@ -53,8 +61,16 @@ macro_rules! new_signing_test {
             for vector in $vectors {
                 let d = decode_scalar(vector.d).expect("invalid vector.d");
                 let k = decode_scalar(vector.k).expect("invalid vector.m");
-                let z = decode_scalar(vector.m).expect("invalid vector.z");
-                let sig = d.try_sign_prehashed(k, z).expect("ECDSA sign failed").0;
+
+                assert_eq!(
+                    <$curve as Curve>::FieldBytesSize::USIZE,
+                    vector.m.len(),
+                    "invalid vector.m (must be field-sized digest)"
+                );
+                let z = FieldBytes::<$curve>::try_from(vector.m).unwrap();
+                let sig = sign_prehashed::<$curve>(&d, &k, &z)
+                    .expect("ECDSA sign failed")
+                    .0;
 
                 assert_eq!(vector.r, sig.r().to_bytes().as_slice());
                 assert_eq!(vector.s, sig.s().to_bytes().as_slice());
@@ -65,42 +81,37 @@ macro_rules! new_signing_test {
 
 /// Define ECDSA verification test.
 #[macro_export]
-#[cfg_attr(docsrs, doc(cfg(feature = "dev")))]
 macro_rules! new_verification_test {
     ($curve:path, $vectors:expr) => {
         use $crate::{
             elliptic_curve::{
-                generic_array::GenericArray,
+                array::Array,
                 group::ff::PrimeField,
                 sec1::{EncodedPoint, FromEncodedPoint},
-                AffinePoint, ProjectiveArithmetic, Scalar,
+                AffinePoint, CurveArithmetic, Scalar,
             },
-            hazmat::VerifyPrimitive,
-            Signature,
+            signature::hazmat::PrehashVerifier,
+            Signature, VerifyingKey,
         };
 
         #[test]
         fn ecdsa_verify_success() {
             for vector in $vectors {
                 let q_encoded = EncodedPoint::<$curve>::from_affine_coordinates(
-                    GenericArray::from_slice(vector.q_x),
-                    GenericArray::from_slice(vector.q_y),
+                    Array::from_slice(vector.q_x),
+                    Array::from_slice(vector.q_y),
                     false,
                 );
 
-                let q = AffinePoint::<$curve>::from_encoded_point(&q_encoded).unwrap();
-
-                let maybe_z = Scalar::<$curve>::from_repr(GenericArray::clone_from_slice(vector.m));
-                assert!(bool::from(maybe_z.is_some()), "invalid vector.m");
-                let z = maybe_z.unwrap();
+                let q = VerifyingKey::<$curve>::from_encoded_point(&q_encoded).unwrap();
 
                 let sig = Signature::from_scalars(
-                    GenericArray::clone_from_slice(vector.r),
-                    GenericArray::clone_from_slice(vector.s),
+                    Array::try_from(vector.r).unwrap(),
+                    Array::try_from(vector.s).unwrap(),
                 )
                 .unwrap();
 
-                let result = q.verify_prehashed(z, &sig);
+                let result = q.verify_prehash(vector.m, &sig);
                 assert!(result.is_ok());
             }
         }
@@ -109,26 +120,20 @@ macro_rules! new_verification_test {
         fn ecdsa_verify_invalid_s() {
             for vector in $vectors {
                 let q_encoded = EncodedPoint::<$curve>::from_affine_coordinates(
-                    GenericArray::from_slice(vector.q_x),
-                    GenericArray::from_slice(vector.q_y),
+                    Array::from_slice(vector.q_x),
+                    Array::from_slice(vector.q_y),
                     false,
                 );
 
-                let q = AffinePoint::<$curve>::from_encoded_point(&q_encoded).unwrap();
-
-                let maybe_z = Scalar::<$curve>::from_repr(GenericArray::clone_from_slice(vector.m));
-                assert!(bool::from(maybe_z.is_some()), "invalid vector.m");
-                let z = maybe_z.unwrap();
+                let q = VerifyingKey::<$curve>::from_encoded_point(&q_encoded).unwrap();
+                let r = Array::try_from(vector.r).unwrap();
 
                 // Flip a bit in `s`
-                let mut s_tweaked = GenericArray::clone_from_slice(vector.s);
+                let mut s_tweaked = Array::try_from(vector.s).unwrap();
                 s_tweaked[0] ^= 1;
 
-                let sig =
-                    Signature::from_scalars(GenericArray::clone_from_slice(vector.r), s_tweaked)
-                        .unwrap();
-
-                let result = q.verify_prehashed(z, &sig);
+                let sig = Signature::from_scalars(r, s_tweaked).unwrap();
+                let result = q.verify_prehash(vector.m, &sig);
                 assert!(result.is_err());
             }
         }
@@ -139,35 +144,38 @@ macro_rules! new_verification_test {
 
 /// Define a Wycheproof verification test.
 #[macro_export]
-#[cfg_attr(docsrs, doc(cfg(feature = "dev")))]
 macro_rules! new_wycheproof_test {
     ($name:ident, $test_name: expr, $curve:path) => {
-        use $crate::{elliptic_curve::sec1::EncodedPoint, signature::Verifier, Signature};
+        use $crate::{
+            elliptic_curve::{bigint::Integer, sec1::EncodedPoint},
+            signature::Verifier,
+            Signature,
+        };
 
         #[test]
         fn $name() {
             use blobby::Blob5Iterator;
-            use elliptic_curve::{bigint::Encoding as _, generic_array::typenum::Unsigned};
+            use elliptic_curve::{array::typenum::Unsigned, bigint::Encoding as _};
 
             // Build a field element but allow for too-short input (left pad with zeros)
             // or too-long input (check excess leftmost bytes are zeros).
             fn element_from_padded_slice<C: elliptic_curve::Curve>(
                 data: &[u8],
             ) -> elliptic_curve::FieldBytes<C> {
-                let point_len = C::UInt::BYTE_SIZE;
+                let point_len = C::FieldBytesSize::USIZE;
                 if data.len() >= point_len {
                     let offset = data.len() - point_len;
                     for v in data.iter().take(offset) {
                         assert_eq!(*v, 0, "EcdsaVerifier: point too large");
                     }
-                    elliptic_curve::FieldBytes::<C>::clone_from_slice(&data[offset..])
+                    elliptic_curve::FieldBytes::<C>::try_from(&data[offset..]).unwrap()
                 } else {
                     // Provided slice is too short and needs to be padded with zeros
                     // on the left.  Build a combined exact iterator to do this.
                     let iter = core::iter::repeat(0)
                         .take(point_len - data.len())
                         .chain(data.iter().cloned());
-                    elliptic_curve::FieldBytes::<C>::from_exact_iter(iter).unwrap()
+                    elliptic_curve::FieldBytes::<C>::from_iter(iter)
                 }
             }
 
